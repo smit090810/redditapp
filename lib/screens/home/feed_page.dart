@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/post_model.dart';
 import '../widgets/home/post_card.dart';
+import '../services/firebase_service.dart';
+import 'create_post_page.dart';
 
 class FeedPage extends StatefulWidget {
   @override
@@ -10,83 +12,24 @@ class FeedPage extends StatefulWidget {
 
 class _FeedPageState extends State<FeedPage> {
   final List<String> _sortOptions = ['Hot', 'New', 'Top', 'Controversial'];
-  String _currentSort = 'Hot';
+  String _currentSort = 'New';
   bool _isLoading = false;
   List<PostModel> _posts = [];
+  final FirebaseService _firebaseService = FirebaseService();
+  Stream<QuerySnapshot>? _postsStream;
 
   @override
   void initState() {
     super.initState();
-    _fetchPosts();
+    _setupPostsStream();
   }
 
-  Future<void> _fetchPosts() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      // This is a placeholder. In a real app, you would fetch from Firebase
-      // For now, we'll use dummy data
-      await Future.delayed(Duration(seconds: 1));
-
-      List<PostModel> dummyPosts = [
-        PostModel(
-          id: '1',
-          title: 'Check out this awesome sunset!',
-          content: 'I took this picture yesterday at the beach',
-          authorId: 'user1',
-          authorName: 'NaturePhotographer',
-          communityName: 'r/Photography',
-          imageUrl:
-              'https://images.unsplash.com/photo-1616036740257-9449ea1f6605',
-          upvotes: 253,
-          downvotes: 12,
-          commentCount: 45,
-          createdAt: DateTime.now().subtract(Duration(hours: 3)),
-        ),
-        PostModel(
-          id: '2',
-          title: 'Just finished this coding project after 3 months!',
-          content: 'Built a full-stack web app with React and Node.js',
-          authorId: 'user2',
-          authorName: 'CodeMaster42',
-          communityName: 'r/Programming',
-          imageUrl: null,
-          upvotes: 187,
-          downvotes: 5,
-          commentCount: 34,
-          createdAt: DateTime.now().subtract(Duration(hours: 7)),
-        ),
-        PostModel(
-          id: '3',
-          title: 'My homemade pizza recipe',
-          content:
-              'After years of practice, I finally perfected my dough recipe',
-          authorId: 'user3',
-          authorName: 'ChefExtraordinaire',
-          communityName: 'r/Cooking',
-          imageUrl:
-              'https://images.unsplash.com/photo-1513104890138-7c749659a591',
-          upvotes: 498,
-          downvotes: 21,
-          commentCount: 92,
-          createdAt: DateTime.now().subtract(Duration(days: 1)),
-        ),
-      ];
-
-      setState(() {
-        _posts = dummyPosts;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error fetching posts: $e')),
-      );
-    }
+  void _setupPostsStream() {
+    // Get all posts from Firestore, ordered by creation date
+    _postsStream = FirebaseFirestore.instance
+        .collection('posts')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
   }
 
   @override
@@ -163,23 +106,95 @@ class _FeedPageState extends State<FeedPage> {
           ),
           Divider(height: 1, thickness: 1),
           Expanded(
-            child: _isLoading
-                ? Center(child: CircularProgressIndicator())
-                : RefreshIndicator(
-                    onRefresh: _fetchPosts,
-                    child: _posts.isEmpty
-                        ? Center(child: Text('No posts found'))
-                        : ListView.separated(
-                            itemCount: _posts.length,
-                            separatorBuilder: (context, index) =>
-                                Divider(height: 1),
-                            itemBuilder: (context, index) {
-                              return PostCard(post: _posts[index]);
-                            },
-                          ),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _postsStream,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Center(child: CircularProgressIndicator());
+                }
+
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(child: Text('No posts found'));
+                }
+
+                // Convert the snapshot data to a list of PostModel objects
+                List<PostModel> posts = snapshot.data!.docs.map((doc) {
+                  Map<String, dynamic> data =
+                      doc.data() as Map<String, dynamic>;
+
+                  // Get the username for the post author
+                  String authorId = data['createdBy'] ?? '';
+                  String authorName = data['authorName'] ?? 'Anonymous';
+
+                  // Get the community name
+                  String communityId = data['communityId'] ?? '';
+                  String communityName = communityId;
+                  if (!communityName.startsWith('r/')) {
+                    communityName = 'r/$communityName';
+                  }
+
+                  return PostModel(
+                    id: doc.id,
+                    title: data['title'] ?? '',
+                    content: data['content'] ?? '',
+                    authorId: authorId,
+                    authorName: authorName,
+                    communityName: communityName,
+                    imageUrl: data['mediaUrl'],
+                    upvotes: data['upvotes'] ?? 0,
+                    downvotes: data['downvotes'] ?? 0,
+                    commentCount: data['commentCount'] ?? 0,
+                    createdAt: data['createdAt']?.toDate() ?? DateTime.now(),
+                  );
+                }).toList();
+
+                // Sort posts based on the selected sort option
+                if (_currentSort == 'New') {
+                  posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                } else if (_currentSort == 'Top') {
+                  posts.sort((a, b) => b.score.compareTo(a.score));
+                } else if (_currentSort == 'Controversial') {
+                  posts.sort((a, b) => (b.upvotes + b.downvotes)
+                      .compareTo(a.upvotes + a.downvotes));
+                }
+
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    setState(() {
+                      // This will trigger a rebuild with the latest data
+                    });
+                    return Future.delayed(Duration.zero);
+                  },
+                  child: ListView.separated(
+                    itemCount: posts.length,
+                    separatorBuilder: (context, index) => Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      return PostCard(post: posts[index]);
+                    },
                   ),
+                );
+              },
+            ),
           ),
         ],
+      ),
+      // Add floating action button to create new posts
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => CreatePostPage()),
+          ).then((_) {
+            // This will refresh the page when coming back from create post
+            setState(() {});
+          });
+        },
+        child: Icon(Icons.add),
+        backgroundColor: Theme.of(context).primaryColor,
       ),
     );
   }

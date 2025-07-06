@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:io';
+import 'dart:typed_data';
+import '../../repository/post_repository.dart';
+import '../services/firebase_service.dart';
 
 class CreatePostPage extends StatefulWidget {
   @override
@@ -14,6 +18,8 @@ class _CreatePostPageState extends State<CreatePostPage> {
   String _selectedCommunity = 'r/Flutter';
   File? _image;
   bool _isPosting = false;
+  final FirebaseService _firebaseService = FirebaseService();
+  final PostRepository _postRepository = PostRepository();
 
   final List<String> _communities = [
     'r/Flutter',
@@ -53,8 +59,43 @@ class _CreatePostPageState extends State<CreatePostPage> {
     });
 
     try {
-      // This would be replaced with actual Firebase logic
-      await Future.delayed(Duration(seconds: 2));
+      // Get current user from your Firebase service
+      final user = _firebaseService.getCurrentUser();
+      if (user == null) {
+        throw Exception('User not logged in');
+      }
+
+      String userId = user.uid;
+
+      // Use your Firebase service to get user profile
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      String authorName = 'User';
+      if (userDoc.exists && userDoc.data() != null) {
+        Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+        authorName = userData['username'] ?? 'Anonymous';
+      }
+
+      // Extract community ID from _selectedCommunity (remove 'r/' prefix)
+      String communityId = _selectedCommunity.substring(2);
+
+      // Convert File to Uint8List if image exists
+      Uint8List? mediaBytes;
+      if (_image != null) {
+        mediaBytes = await _image!.readAsBytes();
+      }
+
+      // Save post to Firebase using your repository
+      await _postRepository.createPost(
+        _titleController.text,
+        _contentController.text,
+        communityId,
+        userId,
+        mediaBytes,
+      );
 
       // Reset form after successful post
       _titleController.clear();
@@ -67,6 +108,9 @@ class _CreatePostPageState extends State<CreatePostPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Post created successfully!')),
       );
+
+      // Navigate back to the feed page to see the new post
+      Navigator.pop(context);
     } catch (e) {
       setState(() {
         _isPosting = false;
