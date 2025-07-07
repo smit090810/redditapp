@@ -11,6 +11,7 @@ import '../services/auth_service.dart';
 import '../widgets/home/post_card.dart';
 import './saved_posts_page.dart';
 import '../post/post_detail_page.dart';
+import '../widgets/settings_sidebar.dart';
 
 class ProfilePage extends StatefulWidget {
   final String userId;
@@ -31,6 +32,7 @@ class _ProfilePageState extends State<ProfilePage>
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _isLoading = false;
   bool _isEditingBio = false;
   UserModel? _userProfile;
@@ -347,6 +349,11 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
+  // Open settings sidebar
+  void _openSettingsSidebar() {
+    _scaffoldKey.currentState?.openEndDrawer();
+  }
+
   String _formatCakeDay(DateTime date) {
     final months = [
       'January',
@@ -368,6 +375,7 @@ class _ProfilePageState extends State<ProfilePage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       appBar: AppBar(
         backgroundColor: Theme.of(context).cardColor,
         elevation: 0,
@@ -384,11 +392,15 @@ class _ProfilePageState extends State<ProfilePage>
             ),
           IconButton(
             icon: Icon(Icons.settings, color: Colors.black),
-            onPressed: () {
-              // Navigate to settings
-            },
+            onPressed: _openSettingsSidebar,
+            tooltip: 'Settings',
           ),
         ],
+      ),
+      endDrawer: SettingsSidebar(
+        onClose: () {
+          Navigator.of(context).pop();
+        },
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
