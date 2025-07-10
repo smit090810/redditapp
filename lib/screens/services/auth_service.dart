@@ -37,6 +37,69 @@ class AuthService {
     return await _auth.signInWithCredential(credential);
   }
 
+  // Add email to a phone auth account
+  Future<void> linkEmailToAccount(String email, String password) async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        // Create email credential
+        AuthCredential emailCredential =
+            EmailAuthProvider.credential(email: email, password: password);
+
+        // Link email to the current phone auth account
+        await user.linkWithCredential(emailCredential);
+        print("Email linked successfully: $email");
+      } else {
+        throw FirebaseAuthException(
+            code: 'no-user', message: 'No user is currently signed in.');
+      }
+    } catch (e) {
+      print("Error linking email: $e");
+      throw e;
+    }
+  }
+
+  // Update email for an existing user - for phone auth users
+  Future<void> updateEmail(String newEmail) async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        print("Attempting to update email to: $newEmail");
+        await user.verifyBeforeUpdateEmail(newEmail);
+        print("Verification email sent to: $newEmail");
+        return;
+      } else {
+        throw FirebaseAuthException(
+            code: 'no-user', message: 'No user is currently signed in.');
+      }
+    } catch (e) {
+      print("Error updating email: $e");
+      throw e;
+    }
+  }
+
+  // Re-authenticate a user with email and password
+  Future<void> reauthenticateUser(String email, String password) async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        // Create a credential
+        AuthCredential credential =
+            EmailAuthProvider.credential(email: email, password: password);
+
+        // Re-authenticate
+        await user.reauthenticateWithCredential(credential);
+        print("User re-authenticated successfully");
+      } else {
+        throw FirebaseAuthException(
+            code: 'no-user', message: 'No user is currently signed in.');
+      }
+    } catch (e) {
+      print("Error re-authenticating user: $e");
+      throw e;
+    }
+  }
+
   // Sign out
   Future<void> signOut() async {
     await _auth.signOut();
